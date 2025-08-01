@@ -2,35 +2,25 @@ package git
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // GitService предоставляет методы для работы с Git репозиторием
 type GitService struct {
-	repo *git.Repository
 	root string
 }
 
 // NewGitService создаёт новый сервис для работы с Git
 func NewGitService(repoPath string) (*GitService, error) {
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка открытия репозитория: %w", err)
-	}
-
-	// Получаем корневую директорию репозитория
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return nil, fmt.Errorf("ошибка получения рабочего дерева: %w", err)
+	// Проверяем, что это Git репозиторий
+	if !IsGitRepository(repoPath) {
+		return nil, fmt.Errorf("директория %s не является Git репозиторием", repoPath)
 	}
 
 	return &GitService{
-		repo: repo,
-		root: worktree.Filesystem.Root(),
+		root: repoPath,
 	}, nil
 }
 
@@ -45,112 +35,40 @@ func (gs *GitService) GetLastCommitMessages(filePath string, n int) ([]string, e
 	// Нормализуем разделители путей для Git
 	relPath = strings.ReplaceAll(relPath, "\\", "/")
 
-	// Получаем историю коммитов для файла
-	commits, err := gs.getFileCommits(relPath, n)
+	// Выполняем git log команду
+	cmd := exec.Command("git", "log", "--oneline", "-n", fmt.Sprintf("%d", n), "--", relPath)
+	cmd.Dir = gs.root
+
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("ошибка получения коммитов для файла %s: %w", filePath, err)
+		return nil, fmt.Errorf("ошибка выполнения git log: %w", err)
 	}
 
-	// Извлекаем сообщения коммитов
+	// Парсим вывод
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var messages []string
-	for _, commit := range commits {
-		messages = append(messages, strings.TrimSpace(commit.Message))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			// Убираем хеш коммита (первые 7 символов + пробел)
+			if len(line) > 8 {
+				message := strings.TrimSpace(line[8:])
+				if message != "" {
+					messages = append(messages, message)
+				}
+			}
+		}
 	}
 
 	return messages, nil
 }
 
-// getFileCommits получает коммиты для конкретного файла
-func (gs *GitService) getFileCommits(filePath string, n int) ([]*object.Commit, error) {
-	// Получаем HEAD коммит
-	head, err := gs.repo.Head()
-	if err != nil {
-		return nil, fmt.Errorf("ошибка получения HEAD: %w", err)
-	}
-
-	// Получаем коммит
-	commit, err := gs.repo.CommitObject(head.Hash)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка получения коммита: %w", err)
-	}
-
-	var commits []*object.Commit
-	count := 0
-
-	// Итерируемся по истории коммитов
-	err = gs.iterateCommits(commit, func(c *object.Commit) error {
-		if count >= n {
-			return fmt.Errorf("достигнут лимит коммитов")
-		}
-
-		// Проверяем, изменялся ли файл в этом коммите
-		if gs.fileChangedInCommit(c, filePath) {
-			commits = append(commits, c)
-			count++
-		}
-
-		return nil
-	})
-
-	if err != nil && err.Error() != "достигнут лимит коммитов" {
-		return nil, fmt.Errorf("ошибка итерации коммитов: %w", err)
-	}
-
-	return commits, nil
-}
-
-// iterateCommits итерируется по истории коммитов
-func (gs *GitService) iterateCommits(commit *object.Commit, fn func(*object.Commit) error) error {
-	if commit == nil {
-		return nil
-	}
-
-	if err := fn(commit); err != nil {
-		return err
-	}
-
-	// Получаем родительские коммиты
-	for _, parent := range commit.ParentHashes {
-		parentCommit, err := gs.repo.CommitObject(parent)
-		if err != nil {
-			continue // Пропускаем недоступные коммиты
-		}
-
-		if err := gs.iterateCommits(parentCommit, fn); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// fileChangedInCommit проверяет, изменялся ли файл в коммите
-func (gs *GitService) fileChangedInCommit(commit *object.Commit, filePath string) bool {
-	// Получаем изменения в коммите
-	changes, err := commit.Parent(0)
-	if err != nil {
-		// Если нет родителя (первый коммит), считаем что файл изменялся
-		return true
-	}
-
-	patch, err := changes.Patch(commit)
-	if err != nil {
-		return false
-	}
-
-	// Проверяем, есть ли изменения в нашем файле
-	for _, filePatch := range patch.FilePatches() {
-		from, to := filePatch.Files()
-		if (from != nil && from.Name() == filePath) || (to != nil && to.Name() == filePath) {
-			return true
-		}
-	}
-
-	return false
-}
-
 // IsGitRepository проверяет, является ли директория Git репозиторием
 func IsGitRepository(path string) bool {
-	_, err := git.PlainOpen(path)
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmd.Dir = path
+
+	err := cmd.Run()
 	return err == nil
 }

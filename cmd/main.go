@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
 
 	"gokb-embedder/internal/app"
 	"gokb-embedder/internal/config"
@@ -20,4 +19,4 @@ func main() {
 	if err := application.Run(); err != nil {
 		log.Fatalf("Ошибка выполнения приложения: %v", err)
 	}
-} 
+}

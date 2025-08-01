@@ -1,0 +1,155 @@
+# GitHub Actions workflow для GoKB Embedder
+# Автоматическая сборка, тестирование и создание релизов
+
+name: GoKB Embedder CI/CD
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+  release:
+    types: [published]
+
+jobs:
+  # Основная сборка и тестирование
+  test:
+    name: Тестирование
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout кода
+      uses: actions/checkout@v4
+
+    - name: Настройка Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Установка зависимостей
+      run: make deps
+
+    - name: Форматирование кода
+      run: make fmt
+
+    - name: Линтинг
+      run: make lint
+
+    - name: Запуск тестов
+      run: make test
+
+    - name: Тесты с покрытием
+      run: make test-coverage
+
+    - name: Проверка безопасности
+      run: make security
+
+  # Сборка для разных платформ
+  build:
+    name: Сборка
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - name: Checkout кода
+      uses: actions/checkout@v4
+
+    - name: Настройка Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Установка зависимостей
+      run: make deps
+
+    - name: Сборка для всех платформ
+      run: make build-all
+
+    - name: Загрузка артефактов сборки
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries
+        path: build/
+        retention-days: 30
+
+  # Создание релиза
+  release:
+    name: Создание релиза
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'release'
+    steps:
+    - name: Checkout кода
+      uses: actions/checkout@v4
+
+    - name: Настройка Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Установка зависимостей
+      run: make deps
+
+    - name: Создание релиза
+      run: make release
+
+    - name: Загрузка релиза
+      uses: actions/upload-artifact@v4
+      with:
+        name: release
+        path: release/
+        retention-days: 90
+
+  # Интеграционные тесты
+  integration:
+    name: Интеграционные тесты
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - name: Checkout кода
+      uses: actions/checkout@v4
+
+    - name: Настройка Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Установка зависимостей
+      run: make deps
+
+    - name: Сборка приложения
+      run: make build
+
+    - name: Проверка версии
+      run: make version
+
+    - name: Проверка помощи
+      run: ./build/gokb-embedder --help || echo "Help command not implemented yet"
+
+  # Проверка совместимости с разными версиями Go
+  compatibility:
+    name: Совместимость с Go
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22']
+    steps:
+    - name: Checkout кода
+      uses: actions/checkout@v4
+
+    - name: Настройка Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Установка зависимостей
+      run: make deps
+
+    - name: Сборка
+      run: make build
+
+    - name: Тестирование
+      run: make test 

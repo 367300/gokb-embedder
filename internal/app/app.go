@@ -117,7 +117,7 @@ func (r *App) initialize() error {
 	r.logger.Debug("✅ Сканер создан")
 
 	if err := r.scanner.LoadGitignore(); err != nil {
-		r.logger.Warn("⚠️ Не удалось загрузить .gitignore: %v", err)
+		r.logger.Warnf("⚠️ Не удалось загрузить .gitignore: %v", err)
 	} else {
 		r.logger.Debug("✅ .gitignore загружен")
 	}
@@ -132,7 +132,7 @@ func (r *App) initialize() error {
 		r.logger.Debug("Git репозиторий найден, инициализация Git сервиса...")
 		gitService, err := git.NewGitService(r.config.RootDir)
 		if err != nil {
-			r.logger.Warn("⚠️ Не удалось инициализировать Git сервис: %v", err)
+			r.logger.Warnf("⚠️ Не удалось инициализировать Git сервис: %v", err)
 		} else {
 			r.gitService = gitService
 			r.logger.Debug("✅ Git сервис инициализирован")

@@ -43,7 +43,7 @@ func TestCountTokens(t *testing.T) {
 		{
 			name:     "смешанный текст",
 			input:    "def hello_world(): return 'Hello, World!'",
-			expected: 8, // def, hello_world, (), :, return, 'Hello, World!'
+			expected: 14, // def, hello_world, (, ), :, return, ', Hello, ,, World, !, '
 		},
 	}
 

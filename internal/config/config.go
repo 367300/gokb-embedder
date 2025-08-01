@@ -2,8 +2,8 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -40,7 +40,8 @@ func Load() (*Config, error) {
 	}
 
 	rootDir := getEnv("ROOT_DIR", ".")
-	fileExtensions := parseFileExtensions(getEnv("FILE_EXTENSIONS", ".py,.md,.yml,.conf"))
+	fileExtensionsStr := getEnv("FILE_EXTENSIONS", ".py,.md,.yml,.conf")
+	fileExtensions := parseFileExtensions(fileExtensionsStr)
 	dbPath := getEnv("DB_PATH", "embeddings.sqlite3")
 	nCommits := getEnvAsInt("N_COMMITS", 3)
 	tokenLimit := getEnvAsInt("TOKEN_LIMIT", 1600)
@@ -80,12 +81,15 @@ func parseFileExtensions(extensions string) []string {
 	if extensions == "" {
 		return []string{".py", ".md", ".yml", ".conf"}
 	}
-	
+
 	var result []string
-	for _, ext := range filepath.SplitList(extensions) {
+	// Разделяем по запятой, а не по filepath.SplitList
+	parts := strings.Split(extensions, ",")
+	for _, ext := range parts {
+		ext = strings.TrimSpace(ext)
 		if ext != "" {
 			result = append(result, ext)
 		}
 	}
 	return result
-} 
+}

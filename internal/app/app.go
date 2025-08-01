@@ -91,36 +91,57 @@ func (r *App) Run() error {
 // initialize инициализирует все компоненты приложения
 func (r *App) initialize() error {
 	r.logger.Info("🔧 Инициализация компонентов...")
+	r.logger.Infof("📁 ROOT_DIR: %s", r.config.RootDir)
+	r.logger.Infof("📝 FILE_EXTENSIONS: %v", r.config.FileExtensions)
 
 	// Инициализируем базу данных
+	r.logger.Debug("Инициализация базы данных...")
 	db, err := database.NewDatabase(r.config.DBPath)
 	if err != nil {
 		return fmt.Errorf("ошибка инициализации базы данных: %w", err)
 	}
 	r.database = db
+	r.logger.Debug("✅ База данных инициализирована")
 
 	// Инициализируем OpenAI клиент
+	r.logger.Debug("Инициализация OpenAI клиента...")
 	r.openai = openai.NewClient(r.config.OpenAIAPIKey)
+	r.logger.Debug("✅ OpenAI клиент инициализирован")
 
 	// Инициализируем сканер
+	r.logger.Debug("Инициализация сканера...")
 	r.scanner = scanner.NewScanner(r.config.RootDir, r.config.FileExtensions)
+	if r.scanner == nil {
+		return fmt.Errorf("не удалось создать сканер")
+	}
+	r.logger.Debug("✅ Сканер создан")
+
 	if err := r.scanner.LoadGitignore(); err != nil {
-		r.logger.Warn("⚠️ Не удалось загрузить .gitignore")
+		r.logger.Warn("⚠️ Не удалось загрузить .gitignore: %v", err)
+	} else {
+		r.logger.Debug("✅ .gitignore загружен")
 	}
 
 	// Регистрируем парсеры
+	r.logger.Debug("Регистрация парсеров...")
 	r.registerParsers()
 
 	// Инициализируем Git сервис (если это Git репозиторий)
+	r.logger.Debug("Проверка Git репозитория...")
 	if git.IsGitRepository(r.config.RootDir) {
+		r.logger.Debug("Git репозиторий найден, инициализация Git сервиса...")
 		gitService, err := git.NewGitService(r.config.RootDir)
 		if err != nil {
-			r.logger.Warn("⚠️ Не удалось инициализировать Git сервис")
+			r.logger.Warn("⚠️ Не удалось инициализировать Git сервис: %v", err)
 		} else {
 			r.gitService = gitService
+			r.logger.Debug("✅ Git сервис инициализирован")
 		}
+	} else {
+		r.logger.Debug("Git репозиторий не найден, Git сервис не инициализирован")
 	}
 
+	r.logger.Info("✅ Все компоненты инициализированы")
 	return nil
 }
 
@@ -135,27 +156,71 @@ func (r *App) cleanup() {
 
 // registerParsers регистрирует все доступные парсеры
 func (r *App) registerParsers() {
+	r.logger.Debug("Начинаем регистрацию парсеров...")
+
 	// Регистрируем Python парсер
+	r.logger.Debug("Регистрация Python парсера...")
 	pythonParser := parsers.NewPythonParser()
+	if pythonParser == nil {
+		r.logger.Error("❌ Не удалось создать Python парсер")
+		return
+	}
 	r.parsers.Register(pythonParser)
+	r.logger.Debugf("✅ Python парсер зарегистрирован: %s", pythonParser.GetName())
 
 	// Регистрируем текстовый парсер
+	r.logger.Debug("Регистрация текстового парсера...")
 	textParser := parsers.NewTextParser(r.config.TokenLimit)
+	if textParser == nil {
+		r.logger.Error("❌ Не удалось создать текстовый парсер")
+		return
+	}
 	r.parsers.Register(textParser)
+	r.logger.Debugf("✅ Текстовый парсер зарегистрирован: %s", textParser.GetName())
 
-	r.logger.Infof("📝 Зарегистрировано парсеров: %d", len(r.parsers.GetAllParsers()))
+	allParsers := r.parsers.GetAllParsers()
+	r.logger.Infof("📝 Зарегистрировано парсеров: %d", len(allParsers))
+
+	for _, parser := range allParsers {
+		r.logger.Debugf("  - %s", parser.GetName())
+	}
 }
 
 // scanFiles сканирует файлы в проекте
 func (r *App) scanFiles() ([]string, error) {
 	r.logger.Info("🔍 Сканирование файлов...")
 
+	if r.scanner == nil {
+		return nil, fmt.Errorf("сканер не инициализирован")
+	}
+
+	r.logger.Debugf("Сканирование в директории: %s", r.config.RootDir)
+	r.logger.Debugf("Ищем файлы с расширениями: %v", r.config.FileExtensions)
+
 	files, err := r.scanner.ScanFiles()
 	if err != nil {
+		r.logger.Errorf("Ошибка сканирования файлов: %v", err)
 		return nil, err
 	}
 
 	r.logger.Infof("📁 Найдено файлов: %d", len(files))
+	if len(files) == 0 {
+		r.logger.Warn("⚠️ Файлы не найдены! Проверьте:")
+		r.logger.Warn("  - Правильность пути ROOT_DIR")
+		r.logger.Warn("  - Наличие файлов с указанными расширениями")
+		r.logger.Warn("  - Правила .gitignore")
+	} else {
+		r.logger.Debug("Найденные файлы:")
+		for i, file := range files {
+			if i < 10 { // Показываем только первые 10 файлов
+				r.logger.Debugf("  - %s", file)
+			} else if i == 10 {
+				r.logger.Debugf("  ... и ещё %d файлов", len(files)-10)
+				break
+			}
+		}
+	}
+
 	return files, nil
 }
 

@@ -51,6 +51,11 @@ func (s *Scanner) LoadGitignore() error {
 // ScanFiles сканирует файлы в директории
 func (s *Scanner) ScanFiles() ([]string, error) {
 	var files []string
+	var totalFiles, matchedFiles, ignoredFiles int
+
+	fmt.Printf("🔍 Сканирование в: %s\n", s.rootDir)
+	fmt.Printf("📝 Ищем расширения: %v\n", s.fileExtensions)
+	fmt.Printf("🚫 Gitignore паттернов: %d\n", len(s.gitignorePatterns))
 
 	err := filepath.Walk(s.rootDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -62,14 +67,19 @@ func (s *Scanner) ScanFiles() ([]string, error) {
 			return nil
 		}
 
-		// Проверяем расширение файла
+		totalFiles++
 		ext := filepath.Ext(path)
+
+		// Проверяем расширение файла
 		if !contains(s.fileExtensions, ext) {
 			return nil
 		}
 
+		matchedFiles++
+
 		// Проверяем .gitignore
 		if s.shouldIgnoreFile(path) {
+			ignoredFiles++
 			return nil
 		}
 
@@ -86,6 +96,12 @@ func (s *Scanner) ScanFiles() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ошибка сканирования файлов: %w", err)
 	}
+
+	fmt.Printf("📊 Статистика сканирования:\n")
+	fmt.Printf("  - Всего файлов: %d\n", totalFiles)
+	fmt.Printf("  - Подходящих расширений: %d\n", matchedFiles)
+	fmt.Printf("  - Игнорировано .gitignore: %d\n", ignoredFiles)
+	fmt.Printf("  - Обработано: %d\n", len(files))
 
 	return files, nil
 }

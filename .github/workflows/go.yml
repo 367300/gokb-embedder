@@ -10,8 +10,6 @@ on:
       - 'v*'
   pull_request:
     branches: [ "main" ]
-  release:
-    types: [published]
 
 jobs:
   # Основная сборка и тестирование
@@ -111,40 +109,6 @@ jobs:
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Создание релиза при публикации релиза
-  release-published:
-    name: Обработка опубликованного релиза
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'release'
-    steps:
-    - name: Checkout кода
-      uses: actions/checkout@v4
-
-    - name: Настройка Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.22'
-        cache: true
-
-    - name: Установка инструментов для создания архивов
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y zip unzip
-
-    - name: Установка зависимостей
-      run: make deps
-
-    - name: Создание релиза
-      run: make release
-
-    - name: Загрузка релиза
-      uses: actions/upload-artifact@v4
-      with:
-        name: release
-        path: release/
-        retention-days: 90
 
   # Интеграционные тесты
   integration:

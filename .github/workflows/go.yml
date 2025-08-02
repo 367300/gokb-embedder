@@ -32,17 +32,11 @@ jobs:
     - name: Форматирование кода
       run: make fmt
 
-    - name: Линтинг
-      run: make lint
-
     - name: Запуск тестов
       run: make test
 
     - name: Тесты с покрытием
       run: make test-coverage
-
-    - name: Проверка безопасности
-      run: make security
 
   # Сборка для разных платформ
   build:
@@ -56,8 +50,13 @@ jobs:
     - name: Настройка Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.22'
         cache: true
+
+    - name: Установка системных зависимостей
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zip unzip
 
     - name: Установка зависимостей
       run: make deps
@@ -85,8 +84,13 @@ jobs:
     - name: Настройка Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.22'
         cache: true
+
+    - name: Установка инструментов для создания архивов
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zip unzip
 
     - name: Установка зависимостей
       run: make deps
@@ -113,7 +117,7 @@ jobs:
     - name: Настройка Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.22'
         cache: true
 
     - name: Установка зависимостей

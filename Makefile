@@ -56,6 +56,22 @@ install-tools:
 	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
 	@echo "$(GREEN)✅ Инструменты установлены$(NC)"
 
+# Установка системных зависимостей
+install-deps:
+	@echo "$(GREEN)🔧 Установка системных зависимостей...$(NC)"
+	@if command -v apt-get >/dev/null 2>&1; then \
+		sudo apt-get update && sudo apt-get install -y zip unzip; \
+	elif command -v yum >/dev/null 2>&1; then \
+		sudo yum install -y zip unzip; \
+	elif command -v dnf >/dev/null 2>&1; then \
+		sudo dnf install -y zip unzip; \
+	elif command -v pacman >/dev/null 2>&1; then \
+		sudo pacman -S --noconfirm zip unzip; \
+	else \
+		echo "$(YELLOW)⚠️  Не удалось определить пакетный менеджер. Установите zip вручную.$(NC)"; \
+	fi
+	@echo "$(GREEN)✅ Системные зависимости установлены$(NC)"
+
 # Запуск приложения
 run: build
 	@echo "$(GREEN)🚀 Запуск приложения...$(NC)"
@@ -118,7 +134,12 @@ release: clean build-all
 	cd $(BUILD_DIR) && tar -czf ../release/$(BINARY_NAME)-$(VERSION)-linux-arm64.tar.gz $(BINARY_NAME)-linux-arm64
 	cd $(BUILD_DIR) && tar -czf ../release/$(BINARY_NAME)-$(VERSION)-darwin-amd64.tar.gz $(BINARY_NAME)-darwin-amd64
 	cd $(BUILD_DIR) && tar -czf ../release/$(BINARY_NAME)-$(VERSION)-darwin-arm64.tar.gz $(BINARY_NAME)-darwin-arm64
-	cd $(BUILD_DIR) && zip ../release/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip $(BINARY_NAME)-windows-amd64.exe
+	@if command -v zip >/dev/null 2>&1; then \
+		cd $(BUILD_DIR) && zip ../release/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip $(BINARY_NAME)-windows-amd64.exe; \
+	else \
+		echo "$(YELLOW)⚠️  zip не найден, создаём tar.gz для Windows...$(NC)"; \
+		cd $(BUILD_DIR) && tar -czf ../release/$(BINARY_NAME)-$(VERSION)-windows-amd64.tar.gz $(BINARY_NAME)-windows-amd64.exe; \
+	fi
 	@echo "$(GREEN)✅ Релиз создан в папке release/$(NC)"
 
 # Проверка версии
@@ -132,6 +153,7 @@ help:
 	@echo "  $(YELLOW)build-all$(NC)    - Сборка для всех платформ"
 	@echo "  $(YELLOW)deps$(NC)         - Установка зависимостей"
 	@echo "  $(YELLOW)install-tools$(NC) - Установка инструментов разработки"
+	@echo "  $(YELLOW)install-deps$(NC) - Установка системных зависимостей"
 	@echo "  $(YELLOW)run$(NC)          - Запуск приложения"
 	@echo "  $(YELLOW)dev$(NC)          - Запуск в режиме разработки"
 	@echo "  $(YELLOW)test$(NC)         - Запуск тестов"

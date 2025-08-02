@@ -24,6 +24,13 @@ build:
 	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) cmd/main.go
 	@echo "$(GREEN)✅ Приложение собрано: $(BUILD_DIR)/$(BINARY_NAME)$(NC)"
 
+# Сборка для Windows
+build-windows:
+	@echo "$(GREEN)🔨 Сборка для Windows...$(NC)"
+	@mkdir -p $(BUILD_DIR)
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe cmd/main.go
+	@echo "$(GREEN)✅ Приложение собрано для Windows: $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe$(NC)"
+
 # Сборка для разных платформ
 build-all: clean
 	@echo "$(GREEN)🔨 Сборка для всех платформ...$(NC)"
@@ -38,7 +45,7 @@ build-all: clean
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 cmd/main.go
 	
 	# Windows
-	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe cmd/main.go
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe cmd/main.go
 	
 	@echo "$(GREEN)✅ Сборка завершена для всех платформ$(NC)"
 
@@ -150,6 +157,7 @@ version:
 help:
 	@echo "$(GREEN)📖 Доступные команды:$(NC)"
 	@echo "  $(YELLOW)build$(NC)        - Сборка приложения"
+	@echo "  $(YELLOW)build-windows$(NC) - Сборка для Windows"
 	@echo "  $(YELLOW)build-all$(NC)    - Сборка для всех платформ"
 	@echo "  $(YELLOW)deps$(NC)         - Установка зависимостей"
 	@echo "  $(YELLOW)install-tools$(NC) - Установка инструментов разработки"

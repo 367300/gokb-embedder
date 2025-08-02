@@ -22,6 +22,9 @@ type Config struct {
 
 	// Настройки логирования
 	LogLevel string
+
+	// Режим работы (для CLI)
+	OperationMode string
 }
 
 // Load загружает конфигурацию из .env файла и переменных окружения

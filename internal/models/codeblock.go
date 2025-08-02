@@ -8,7 +8,8 @@ import (
 
 // CodeBlock представляет блок кода с метаинформацией
 type CodeBlock struct {
-	FilePath       string   `json:"file_path"`
+	FilePath       string   `json:"file_path"`     // Абсолютный путь к файлу
+	RelativePath   string   `json:"relative_path"` // Относительный путь от корня проекта
 	BlockType      string   `json:"block_type"`
 	ClassName      *string  `json:"class_name,omitempty"`
 	MethodName     *string  `json:"method_name,omitempty"`
@@ -21,13 +22,14 @@ type CodeBlock struct {
 // NewCodeBlock создаёт новый блок кода
 func NewCodeBlock(filePath, blockType string, className, methodName *string, startLine, endLine int, rawText string) *CodeBlock {
 	return &CodeBlock{
-		FilePath:   filePath,
-		BlockType:  blockType,
-		ClassName:  className,
-		MethodName: methodName,
-		StartLine:  startLine,
-		EndLine:    endLine,
-		RawText:    rawText,
+		FilePath:     filePath,
+		RelativePath: filePath, // По умолчанию относительный путь равен абсолютному
+		BlockType:    blockType,
+		ClassName:    className,
+		MethodName:   methodName,
+		StartLine:    startLine,
+		EndLine:      endLine,
+		RawText:      rawText,
 	}
 }
 
@@ -38,7 +40,13 @@ func (cb *CodeBlock) SetCommitMessages(messages []string) {
 
 // GetEmbeddingText формирует текст для создания эмбединга
 func (cb *CodeBlock) GetEmbeddingText() string {
-	text := fmt.Sprintf("File: %s\n", cb.FilePath)
+	// Используем относительный путь для отображения в тексте эмбединга
+	displayPath := cb.RelativePath
+	if displayPath == "" {
+		displayPath = cb.FilePath // Fallback на абсолютный путь
+	}
+
+	text := fmt.Sprintf("File: %s\n", displayPath)
 
 	if cb.ClassName != nil {
 		text += fmt.Sprintf("Class: %s\n", *cb.ClassName)
@@ -65,7 +73,15 @@ func (cb *CodeBlock) GetFileName() string {
 
 // GetRelativePath возвращает относительный путь файла
 func (cb *CodeBlock) GetRelativePath() string {
+	if cb.RelativePath != "" {
+		return cb.RelativePath
+	}
 	return cb.FilePath
+}
+
+// SetRelativePath устанавливает относительный путь файла
+func (cb *CodeBlock) SetRelativePath(relativePath string) {
+	cb.RelativePath = relativePath
 }
 
 // String возвращает строковое представление блока

@@ -39,9 +39,11 @@ func New(cfg *config.Config) *App {
 		FullTimestamp: true,
 	})
 
-	level, err := logrus.ParseLevel(cfg.LogLevel)
-	if err != nil {
-		level = logrus.InfoLevel
+	level := logrus.InfoLevel
+	if cfg != nil {
+		if parsedLevel, err := logrus.ParseLevel(cfg.LogLevel); err == nil {
+			level = parsedLevel
+		}
 	}
 	logger.SetLevel(level)
 
@@ -50,6 +52,11 @@ func New(cfg *config.Config) *App {
 		logger:  logger,
 		parsers: parsers.NewParserRegistry(),
 	}
+}
+
+// UpdateConfig обновляет конфигурацию приложения
+func (r *App) UpdateConfig(cfg *config.Config) {
+	r.config = cfg
 }
 
 // Run запускает приложение
@@ -85,6 +92,42 @@ func (r *App) Run() error {
 	}
 
 	r.logger.Info("✅ Готово! Эмбединги сохранены в " + r.config.DBPath)
+	return nil
+}
+
+// RunPreprocess запускает предварительную обработку файлов
+func (r *App) RunPreprocess() error {
+	r.logger.Info("📝 Запуск предварительной обработки файлов")
+
+	// Инициализируем компоненты
+	if err := r.initialize(); err != nil {
+		return fmt.Errorf("ошибка инициализации: %w", err)
+	}
+	defer r.cleanup()
+
+	// Сканируем файлы
+	files, err := r.scanFiles()
+	if err != nil {
+		return fmt.Errorf("ошибка сканирования файлов: %w", err)
+	}
+
+	// Проверяем изменения файлов
+	filesToProcess, err := r.checkFileChanges(files)
+	if err != nil {
+		return fmt.Errorf("ошибка проверки изменений файлов: %w", err)
+	}
+
+	if len(filesToProcess) == 0 {
+		r.logger.Info("✅ Все файлы актуальны, обновление не требуется!")
+		return nil
+	}
+
+	// Обрабатываем файлы без эмбедингов
+	if err := r.processFilesWithoutEmbeddings(filesToProcess); err != nil {
+		return fmt.Errorf("ошибка предварительной обработки файлов: %w", err)
+	}
+
+	r.logger.Info("✅ Готово! Блоки сохранены в " + r.config.DBPath)
 	return nil
 }
 
@@ -142,6 +185,43 @@ func (r *App) initialize() error {
 	}
 
 	r.logger.Info("✅ Все компоненты инициализированы")
+	return nil
+}
+
+// InitializeDatabase инициализирует только базу данных
+func (r *App) InitializeDatabase() error {
+	r.logger.Info("🔧 Инициализация базы данных...")
+
+	// Инициализируем базу данных
+	r.logger.Debug("Инициализация базы данных...")
+	db, err := database.NewDatabase(r.config.DBPath)
+	if err != nil {
+		return fmt.Errorf("ошибка инициализации базы данных: %w", err)
+	}
+	r.database = db
+	r.logger.Debug("✅ База данных инициализирована")
+
+	return nil
+}
+
+// InitializeForEmbeddings инициализирует базу данных и OpenAI клиент
+func (r *App) InitializeForEmbeddings() error {
+	r.logger.Info("🔧 Инициализация для генерации эмбедингов...")
+
+	// Инициализируем базу данных
+	r.logger.Debug("Инициализация базы данных...")
+	db, err := database.NewDatabase(r.config.DBPath)
+	if err != nil {
+		return fmt.Errorf("ошибка инициализации базы данных: %w", err)
+	}
+	r.database = db
+	r.logger.Debug("✅ База данных инициализирована")
+
+	// Инициализируем OpenAI клиент
+	r.logger.Debug("Инициализация OpenAI клиента...")
+	r.openai = openai.NewClient(r.config.OpenAIAPIKey)
+	r.logger.Debug("✅ OpenAI клиент инициализирован")
+
 	return nil
 }
 
@@ -301,13 +381,17 @@ func (r *App) processFiles(files []string) error {
 			continue
 		}
 
-		// Получаем сообщения коммитов
-		if r.gitService != nil {
-			commitMessages, err := r.gitService.GetLastCommitMessages(fullPath, r.config.NCommits)
-			if err != nil {
-				r.logger.Debugf("Не удалось получить коммиты для %s: %v", file, err)
-			} else {
-				for _, block := range blocks {
+		// Устанавливаем относительные пути и получаем сообщения коммитов
+		for _, block := range blocks {
+			// Устанавливаем относительный путь от корня проекта
+			block.SetRelativePath(file)
+
+			// Получаем сообщения коммитов
+			if r.gitService != nil {
+				commitMessages, err := r.gitService.GetLastCommitMessages(fullPath, r.config.NCommits)
+				if err != nil {
+					r.logger.Debugf("Не удалось получить коммиты для %s: %v", file, err)
+				} else {
 					block.SetCommitMessages(commitMessages)
 				}
 			}
@@ -321,6 +405,167 @@ func (r *App) processFiles(files []string) error {
 
 	// Создаём эмбединги
 	return r.createEmbeddings(allBlocks)
+}
+
+// processFilesWithoutEmbeddings обрабатывает файлы без создания эмбедингов
+func (r *App) processFilesWithoutEmbeddings(files []string) error {
+	r.logger.Info("📝 Предварительная обработка файлов (без эмбедингов)...")
+
+	var allBlocks []*models.CodeBlock
+
+	// Создаём прогресс-бар
+	bar := progressbar.Default(int64(len(files)), "Обработка файлов")
+
+	for _, file := range files {
+		bar.Add(1)
+
+		fullPath := filepath.Join(r.config.RootDir, file)
+		ext := filepath.Ext(file)
+
+		// Получаем парсер для файла
+		parser, found := r.parsers.GetParser(ext)
+		if !found {
+			r.logger.Warnf("⚠️ Не найден парсер для файла %s", file)
+			continue
+		}
+
+		// Парсим файл
+		blocks, err := parser.ParseFile(fullPath)
+		if err != nil {
+			r.logger.Warnf("⚠️ Ошибка парсинга файла %s: %v", file, err)
+			continue
+		}
+
+		// Устанавливаем относительные пути и получаем сообщения коммитов
+		for _, block := range blocks {
+			// Устанавливаем относительный путь от корня проекта
+			block.SetRelativePath(file)
+
+			// Получаем сообщения коммитов
+			if r.gitService != nil {
+				commitMessages, err := r.gitService.GetLastCommitMessages(fullPath, r.config.NCommits)
+				if err != nil {
+					r.logger.Debugf("Не удалось получить коммиты для %s: %v", file, err)
+				} else {
+					block.SetCommitMessages(commitMessages)
+				}
+			}
+		}
+
+		allBlocks = append(allBlocks, blocks...)
+	}
+
+	bar.Finish()
+	r.logger.Infof("📦 Всего блоков обработано: %d", len(allBlocks))
+
+	// Сохраняем блоки без эмбедингов
+	return r.saveBlocksWithoutEmbeddings(allBlocks)
+}
+
+// saveBlocksWithoutEmbeddings сохраняет блоки в базу данных без эмбедингов
+func (r *App) saveBlocksWithoutEmbeddings(blocks []*models.CodeBlock) error {
+	r.logger.Info("💾 Сохранение блоков в базу данных...")
+
+	// Создаём прогресс-бар
+	bar := progressbar.Default(int64(len(blocks)), "Сохранение блоков")
+
+	for _, block := range blocks {
+		bar.Add(1)
+
+		// Проверяем, существует ли уже такой блок
+		exists, err := r.database.BlockExists(block)
+		if err != nil {
+			r.logger.Warnf("⚠️ Ошибка проверки существования блока: %v", err)
+			continue
+		}
+		if exists {
+			continue // Пропускаем существующий блок
+		}
+
+		// Формируем текст для эмбединга
+		embeddingText := block.GetEmbeddingText()
+
+		// Сохраняем блок без эмбединга
+		if err := r.database.SaveBlockWithoutEmbedding(block, embeddingText); err != nil {
+			r.logger.Warnf("⚠️ Ошибка сохранения блока %s: %v", block, err)
+			continue
+		}
+	}
+
+	bar.Finish()
+	return nil
+}
+
+// GenerateEmbeddingsOnly генерирует эмбединги только для блоков без эмбедингов
+func (r *App) GenerateEmbeddingsOnly() error {
+	r.logger.Info("🧠 Генерация эмбедингов для существующих блоков...")
+
+	// Получаем блоки без эмбедингов
+	blocks, err := r.database.GetBlocksWithoutEmbeddings()
+	if err != nil {
+		return fmt.Errorf("ошибка получения блоков без эмбедингов: %w", err)
+	}
+
+	if len(blocks) == 0 {
+		r.logger.Info("✅ Все блоки уже имеют эмбединги!")
+		return nil
+	}
+
+	r.logger.Infof("📦 Найдено блоков без эмбедингов: %d", len(blocks))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	// Создаём прогресс-бар
+	bar := progressbar.Default(int64(len(blocks)), "Генерация эмбедингов")
+
+	for _, block := range blocks {
+		bar.Add(1)
+
+		// Формируем текст для эмбединга
+		embeddingText := block.GetEmbeddingText()
+
+		// Получаем эмбединг
+		embedding, err := r.openai.GetEmbedding(ctx, embeddingText)
+		if err != nil {
+			r.logger.Warnf("⚠️ Ошибка получения эмбединга для блока %s: %v", block, err)
+			continue
+		}
+
+		// Обновляем эмбединг
+		if err := r.database.UpdateEmbedding(block, embedding); err != nil {
+			r.logger.Warnf("⚠️ Ошибка обновления эмбединга для блока %s: %v", block, err)
+			continue
+		}
+	}
+
+	bar.Finish()
+	return nil
+}
+
+// ShowDatabaseStatistics показывает статистику базы данных
+func (r *App) ShowDatabaseStatistics() error {
+	r.logger.Info("📊 Статистика базы данных...")
+
+	stats, err := r.database.GetStatistics()
+	if err != nil {
+		return fmt.Errorf("ошибка получения статистики: %w", err)
+	}
+
+	r.logger.Infof("📁 Всего файлов: %d", stats["file_count"])
+	r.logger.Infof("📦 Всего блоков: %d", stats["total_blocks"])
+	r.logger.Infof("✅ Блоков с эмбедингами: %d", stats["blocks_with_embeddings"])
+	r.logger.Infof("⏳ Блоков без эмбедингов: %d", stats["blocks_without_embeddings"])
+
+	// Показываем статистику по типам блоков
+	if blockTypes, ok := stats["block_types"].(map[string]int); ok {
+		r.logger.Info("📝 Статистика по типам блоков:")
+		for blockType, count := range blockTypes {
+			r.logger.Infof("   • %s: %d", blockType, count)
+		}
+	}
+
+	return nil
 }
 
 // createEmbeddings создаёт эмбединги для блоков

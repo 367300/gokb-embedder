@@ -47,6 +47,7 @@ func (d *Database) initTables() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		embedding TEXT NOT NULL,
 		file_path TEXT NOT NULL,
+		relative_path TEXT NOT NULL,
 		block_type TEXT NOT NULL,
 		class_name TEXT,
 		method_name TEXT,
@@ -111,13 +112,14 @@ func (d *Database) SaveEmbedding(block *models.CodeBlock, embedding []float64, e
 	// Вставляем запись
 	query := `
 	INSERT INTO embeddings 
-	(embedding, file_path, block_type, class_name, method_name, 
+	(embedding, file_path, relative_path, block_type, class_name, method_name, 
 	 start_line, end_line, commit_messages, raw_text, embedding_text)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err = d.db.Exec(query,
 		string(embeddingJSON),
 		block.FilePath,
+		block.GetRelativePath(),
 		block.BlockType,
 		className,
 		methodName,
@@ -216,4 +218,222 @@ func (d *Database) GetAllFilePaths() ([]string, error) {
 	}
 
 	return paths, nil
+}
+
+// SaveBlockWithoutEmbedding сохраняет блок кода без эмбединга (только embedding_text)
+func (d *Database) SaveBlockWithoutEmbedding(block *models.CodeBlock, embeddingText string) error {
+	// Сериализуем сообщения коммитов в JSON
+	var commitMessagesJSON *string
+	if len(block.CommitMessages) > 0 {
+		commitJSON, err := json.Marshal(block.CommitMessages)
+		if err != nil {
+			return fmt.Errorf("ошибка сериализации сообщений коммитов: %w", err)
+		}
+		commitStr := string(commitJSON)
+		commitMessagesJSON = &commitStr
+	}
+
+	// Подготавливаем значения для вставки
+	className := ""
+	if block.ClassName != nil {
+		className = *block.ClassName
+	}
+
+	methodName := ""
+	if block.MethodName != nil {
+		methodName = *block.MethodName
+	}
+
+	// Вставляем запись с пустым embedding
+	query := `
+	INSERT INTO embeddings 
+	(embedding, file_path, relative_path, block_type, class_name, method_name, 
+	 start_line, end_line, commit_messages, raw_text, embedding_text)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := d.db.Exec(query,
+		"", // пустой embedding
+		block.FilePath,
+		block.GetRelativePath(),
+		block.BlockType,
+		className,
+		methodName,
+		block.StartLine,
+		block.EndLine,
+		commitMessagesJSON,
+		block.RawText,
+		embeddingText,
+	)
+
+	if err != nil {
+		return fmt.Errorf("ошибка вставки блока: %w", err)
+	}
+
+	return nil
+}
+
+// GetBlocksWithoutEmbeddings возвращает все блоки без эмбедингов
+func (d *Database) GetBlocksWithoutEmbeddings() ([]*models.CodeBlock, error) {
+	rows, err := d.db.Query(`
+		SELECT id, file_path, relative_path, block_type, class_name, method_name, 
+		       start_line, end_line, commit_messages, raw_text, embedding_text
+		FROM embeddings 
+		WHERE embedding = '' OR embedding IS NULL
+		ORDER BY file_path, start_line`)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения блоков без эмбедингов: %w", err)
+	}
+	defer rows.Close()
+
+	var blocks []*models.CodeBlock
+	for rows.Next() {
+		var id, startLine, endLine int
+		var filePath, relativePath, blockType, className, methodName, commitMessages, rawText, embeddingText string
+
+		err := rows.Scan(&id, &filePath, &relativePath, &blockType, &className, &methodName,
+			&startLine, &endLine, &commitMessages, &rawText, &embeddingText)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка сканирования блока: %w", err)
+		}
+
+		// Десериализуем сообщения коммитов
+		var commitMsgs []string
+		if commitMessages != "" {
+			if err := json.Unmarshal([]byte(commitMessages), &commitMsgs); err != nil {
+				return nil, fmt.Errorf("ошибка десериализации сообщений коммитов: %w", err)
+			}
+		}
+
+		// Создаём блок
+		block := &models.CodeBlock{
+			FilePath:       filePath,
+			RelativePath:   relativePath,
+			BlockType:      blockType,
+			StartLine:      startLine,
+			EndLine:        endLine,
+			RawText:        rawText,
+			CommitMessages: commitMsgs,
+		}
+
+		// Устанавливаем опциональные поля
+		if className != "" {
+			block.ClassName = &className
+		}
+		if methodName != "" {
+			block.MethodName = &methodName
+		}
+
+		blocks = append(blocks, block)
+	}
+
+	return blocks, nil
+}
+
+// UpdateEmbedding обновляет эмбединг для существующего блока
+func (d *Database) UpdateEmbedding(block *models.CodeBlock, embedding []float64) error {
+	// Сериализуем эмбединг в JSON
+	embeddingJSON, err := json.Marshal(embedding)
+	if err != nil {
+		return fmt.Errorf("ошибка сериализации эмбединга: %w", err)
+	}
+
+	// Подготавливаем значения для обновления
+	className := ""
+	if block.ClassName != nil {
+		className = *block.ClassName
+	}
+
+	methodName := ""
+	if block.MethodName != nil {
+		methodName = *block.MethodName
+	}
+
+	// Обновляем запись
+	query := `
+	UPDATE embeddings 
+	SET embedding = ?
+	WHERE file_path = ? AND class_name = ? AND method_name = ? 
+	AND start_line = ? AND end_line = ? AND block_type = ?`
+
+	result, err := d.db.Exec(query,
+		string(embeddingJSON),
+		block.FilePath,
+		className,
+		methodName,
+		block.StartLine,
+		block.EndLine,
+		block.BlockType,
+	)
+
+	if err != nil {
+		return fmt.Errorf("ошибка обновления эмбединга: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка получения количества обновлённых строк: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("блок не найден для обновления")
+	}
+
+	return nil
+}
+
+// GetStatistics возвращает статистику базы данных
+func (d *Database) GetStatistics() (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Общее количество блоков
+	var totalBlocks int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM embeddings").Scan(&totalBlocks)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения общего количества блоков: %w", err)
+	}
+	stats["total_blocks"] = totalBlocks
+
+	// Блоки с эмбедингами
+	var blocksWithEmbeddings int
+	err = d.db.QueryRow("SELECT COUNT(*) FROM embeddings WHERE embedding != '' AND embedding IS NOT NULL").Scan(&blocksWithEmbeddings)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения количества блоков с эмбедингами: %w", err)
+	}
+	stats["blocks_with_embeddings"] = blocksWithEmbeddings
+
+	// Блоки без эмбедингов
+	var blocksWithoutEmbeddings int
+	err = d.db.QueryRow("SELECT COUNT(*) FROM embeddings WHERE embedding = '' OR embedding IS NULL").Scan(&blocksWithoutEmbeddings)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения количества блоков без эмбедингов: %w", err)
+	}
+	stats["blocks_without_embeddings"] = blocksWithoutEmbeddings
+
+	// Количество файлов
+	var fileCount int
+	err = d.db.QueryRow("SELECT COUNT(DISTINCT file_path) FROM embeddings").Scan(&fileCount)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения количества файлов: %w", err)
+	}
+	stats["file_count"] = fileCount
+
+	// Статистика по типам блоков
+	rows, err := d.db.Query("SELECT block_type, COUNT(*) FROM embeddings GROUP BY block_type")
+	if err != nil {
+		return nil, fmt.Errorf("ошибка получения статистики по типам блоков: %w", err)
+	}
+	defer rows.Close()
+
+	blockTypeStats := make(map[string]int)
+	for rows.Next() {
+		var blockType string
+		var count int
+		if err := rows.Scan(&blockType, &count); err != nil {
+			return nil, fmt.Errorf("ошибка сканирования статистики типов блоков: %w", err)
+		}
+		blockTypeStats[blockType] = count
+	}
+	stats["block_types"] = blockTypeStats
+
+	return stats, nil
 }

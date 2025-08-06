@@ -258,6 +258,16 @@ func (r *App) registerParsers() {
 	r.parsers.Register(javascriptParser)
 	r.logger.Debugf("✅ JavaScript парсер зарегистрирован: %s", javascriptParser.GetName())
 
+	// Регистрируем PHP парсер
+	r.logger.Debug("Регистрация PHP парсера...")
+	phpParser := parsers.NewPHPParser()
+	if phpParser == nil {
+		r.logger.Error("❌ Не удалось создать PHP парсер")
+		return
+	}
+	r.parsers.Register(phpParser)
+	r.logger.Debugf("✅ PHP парсер зарегистрирован: %s", phpParser.GetName())
+
 	// Регистрируем текстовый парсер
 	r.logger.Debug("Регистрация текстового парсера...")
 	textParser := parsers.NewTextParser(r.config.TokenLimit)

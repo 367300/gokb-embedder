@@ -79,7 +79,7 @@ gokb-embedder-windows-amd64.exe
 cat > .env << EOF
 OPENAI_API_KEY=your_openai_api_key_here
 ROOT_DIR=.
-FILE_EXTENSIONS=.py,.md,.yml,.conf
+FILE_EXTENSIONS=.py,.js,.md,.yml,.conf
 DB_PATH=embeddings.sqlite3
 N_COMMITS=3
 TOKEN_LIMIT=1600
@@ -132,7 +132,7 @@ make build-all
 |------------|----------|--------------|-------------|
 | `OPENAI_API_KEY` | Ключ OpenAI API | - | ✅ |
 | `ROOT_DIR` | Корневая директория для поиска файлов | `.` | ❌ |
-| `FILE_EXTENSIONS` | Расширения файлов для обработки | `.py,.md,.yml,.conf` | ❌ |
+| `FILE_EXTENSIONS` | Расширения файлов для обработки | `.py,.js,.md,.yml,.conf` | ❌ |
 | `DB_PATH` | Путь к файлу базы данных | `embeddings.sqlite3` | ❌ |
 | `N_COMMITS` | Количество последних коммитов | `3` | ❌ |
 | `TOKEN_LIMIT` | Лимит токенов на блок | `1600` | ❌ |
@@ -229,6 +229,7 @@ gokb-embedder/
 | Тип файла | Расширения | Парсер | Описание |
 |-----------|------------|--------|----------|
 | **Python** | `.py` | Python Parser | Методы, функции, классы |
+| **JavaScript** | `.js`, `.jsx`, `.ts`, `.tsx` | JavaScript Parser | Функции, методы, классы, стрелочные функции |
 | **Markdown** | `.md` | Text Parser | Документация, README |
 | **YAML** | `.yml`, `.yaml` | Text Parser | Конфигурации, CI/CD |
 | **Config** | `.conf`, `.config` | Text Parser | Настройки приложений |
@@ -453,6 +454,26 @@ func (gp *GoParser) ParseFile(filePath string) ([]*models.CodeBlock, error) {
 }
 ```
 
+#### 2. Пример JavaScript парсера
+
+Вот как был реализован JavaScript парсер:
+
+```go
+// internal/parsers/javascript_parser.go
+type JavaScriptParser struct{}
+
+func (jp *JavaScriptParser) CanParse(fileExtension string) bool {
+    return fileExtension == ".js" || fileExtension == ".jsx" || 
+           fileExtension == ".ts" || fileExtension == ".tsx"
+}
+
+func (jp *JavaScriptParser) ParseFile(filePath string) ([]*models.CodeBlock, error) {
+    // Парсинг функций, методов, классов, стрелочных функций
+    // Поддержка React компонентов и TypeScript
+    return blocks, nil
+}
+```
+
 #### 2. Зарегистрируйте парсер
 
 ```go
@@ -469,7 +490,7 @@ func (r *App) registerParsers() {
 #### 3. Обновите конфигурацию
 
 ```env
-FILE_EXTENSIONS=.py,.md,.yml,.conf,.go
+FILE_EXTENSIONS=.py,.js,.md,.yml,.conf,.go
 ```
 
 ### 🎯 Интерфейс Parser

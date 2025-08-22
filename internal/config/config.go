@@ -43,7 +43,7 @@ func Load() (*Config, error) {
 	}
 
 	rootDir := getEnv("ROOT_DIR", ".")
-	fileExtensionsStr := getEnv("FILE_EXTENSIONS", ".py,.md,.yml,.conf")
+	fileExtensionsStr := getEnv("FILE_EXTENSIONS", ".py,.js,.php,.md,.yml,.conf")
 	fileExtensions := parseFileExtensions(fileExtensionsStr)
 	dbPath := getEnv("DB_PATH", "embeddings.sqlite3")
 	nCommits := getEnvAsInt("N_COMMITS", 3)
@@ -82,7 +82,7 @@ func getEnvAsInt(key string, defaultValue int) int {
 // parseFileExtensions парсит строку расширений файлов в слайс
 func parseFileExtensions(extensions string) []string {
 	if extensions == "" {
-		return []string{".py", ".md", ".yml", ".conf"}
+		return []string{".py", ".js", ".php", ".md", ".yml", ".conf"}
 	}
 
 	var result []string

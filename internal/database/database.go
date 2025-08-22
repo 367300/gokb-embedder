@@ -2,8 +2,10 @@ package database
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"gokb-embedder/internal/models"
 
@@ -436,4 +438,133 @@ func (d *Database) GetStatistics() (map[string]interface{}, error) {
 	stats["block_types"] = blockTypeStats
 
 	return stats, nil
+}
+
+// ExportToCSV экспортирует данные из базы данных в CSV файл
+func (d *Database) ExportToCSV(outputPath string) error {
+	// Запрос для получения всех данных
+	query := `
+	SELECT 
+		id,
+		file_path,
+		relative_path,
+		block_type,
+		class_name,
+		method_name,
+		start_line,
+		end_line,
+		commit_messages,
+		raw_text,
+		embedding_text,
+		created_at,
+		CASE 
+			WHEN embedding != '' AND embedding IS NOT NULL THEN 'true'
+			ELSE 'false'
+		END as has_embedding
+	FROM embeddings 
+	ORDER BY file_path, start_line`
+
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return fmt.Errorf("ошибка выполнения запроса: %w", err)
+	}
+	defer rows.Close()
+
+	// Создаём CSV файл
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("ошибка создания CSV файла: %w", err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Записываем заголовки
+	headers := []string{
+		"ID",
+		"File Path",
+		"Relative Path",
+		"Block Type",
+		"Class Name",
+		"Method Name",
+		"Start Line",
+		"End Line",
+		"Commit Messages",
+		"Raw Text",
+		"Embedding Text",
+		"Created At",
+		"Has Embedding",
+	}
+
+	if err := writer.Write(headers); err != nil {
+		return fmt.Errorf("ошибка записи заголовков CSV: %w", err)
+	}
+
+	// Записываем данные
+	rowCount := 0
+	for rows.Next() {
+		var (
+			id             int
+			filePath       string
+			relativePath   string
+			blockType      string
+			className      sql.NullString
+			methodName     sql.NullString
+			startLine      int
+			endLine        int
+			commitMessages sql.NullString
+			rawText        string
+			embeddingText  string
+			createdAt      string
+			hasEmbedding   string
+		)
+
+		if err := rows.Scan(
+			&id,
+			&filePath,
+			&relativePath,
+			&blockType,
+			&className,
+			&methodName,
+			&startLine,
+			&endLine,
+			&commitMessages,
+			&rawText,
+			&embeddingText,
+			&createdAt,
+			&hasEmbedding,
+		); err != nil {
+			return fmt.Errorf("ошибка сканирования строки: %w", err)
+		}
+
+		// Подготавливаем данные для CSV
+		row := []string{
+			fmt.Sprintf("%d", id),
+			filePath,
+			relativePath,
+			blockType,
+			className.String,
+			methodName.String,
+			fmt.Sprintf("%d", startLine),
+			fmt.Sprintf("%d", endLine),
+			commitMessages.String,
+			rawText,
+			embeddingText,
+			createdAt,
+			hasEmbedding,
+		}
+
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("ошибка записи строки CSV: %w", err)
+		}
+
+		rowCount++
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("ошибка при чтении строк: %w", err)
+	}
+
+	return nil
 }

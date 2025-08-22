@@ -673,3 +673,34 @@ func (r *App) getFileHash(filePath string) (string, error) {
 	hash := md5.Sum(data)
 	return fmt.Sprintf("%x", hash), nil
 }
+
+// ExportDatabaseToCSV экспортирует базу данных в CSV файл
+func (r *App) ExportDatabaseToCSV(outputPath string) error {
+	r.logger.Info("📤 Экспорт базы данных в CSV...")
+
+	// Проверяем, существует ли база данных
+	if r.database == nil {
+		return fmt.Errorf("база данных не инициализирована")
+	}
+
+	// Получаем статистику для проверки наличия данных
+	stats, err := r.database.GetStatistics()
+	if err != nil {
+		return fmt.Errorf("ошибка получения статистики базы данных: %w", err)
+	}
+
+	totalBlocks := stats["total_blocks"].(int)
+	if totalBlocks == 0 {
+		return fmt.Errorf("база данных пуста, нечего экспортировать")
+	}
+
+	r.logger.Infof("📊 Найдено блоков для экспорта: %d", totalBlocks)
+
+	// Экспортируем данные
+	if err := r.database.ExportToCSV(outputPath); err != nil {
+		return fmt.Errorf("ошибка экспорта в CSV: %w", err)
+	}
+
+	r.logger.Infof("✅ Экспорт завершён! Файл сохранён: %s", outputPath)
+	return nil
+}

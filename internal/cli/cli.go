@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gokb-embedder/internal/app"
 	"gokb-embedder/internal/config"
 
 	"github.com/fatih/color"
@@ -131,6 +132,7 @@ func (c *CLI) showMainMenu() (*config.Config, error) {
 				"📝 Настроить парсеры",
 				"🔍 Проверить настройки",
 				"📊 Статистика базы данных",
+				"📤 Экспорт базы данных в CSV",
 				"📝 Предварительная обработка файлов",
 				"🧠 Генерация эмбедингов",
 				"▶️  Полная обработка (файлы + эмбединги)",
@@ -165,6 +167,14 @@ func (c *CLI) showMainMenu() (*config.Config, error) {
 			}
 			c.config.OperationMode = "statistics"
 			return c.config, nil
+		case "📤 Экспорт базы данных в CSV":
+			if c.config == nil {
+				color.Red("❌ Сначала настройте конфигурацию!")
+				continue
+			}
+			if err := c.exportToCSV(); err != nil {
+				color.Red("❌ Ошибка экспорта: %v", err)
+			}
 		case "📝 Предварительная обработка файлов":
 			if c.config == nil {
 				color.Red("❌ Сначала настройте конфигурацию!")
@@ -561,4 +571,75 @@ func maskAPIKey(apiKey string) string {
 		return "***"
 	}
 	return apiKey[:4] + "..." + apiKey[len(apiKey)-4:]
+}
+
+// exportToCSV экспортирует базу данных в CSV файл
+func (c *CLI) exportToCSV() error {
+	color.Cyan("📤 Экспорт базы данных в CSV")
+	fmt.Println()
+
+	// Проверяем существование базы данных
+	if _, err := os.Stat(c.config.DBPath); os.IsNotExist(err) {
+		color.Red("❌ База данных не найдена: %s", c.config.DBPath)
+		color.Yellow("💡 Сначала создайте базу данных, запустив обработку файлов")
+		fmt.Println()
+		return nil
+	}
+
+	// Запрашиваем путь для сохранения CSV файла
+	color.Yellow("📁 Путь для сохранения CSV файла")
+	prompt := promptui.Prompt{
+		Label:   "Введите путь к файлу (например: export.csv)",
+		Default: "embeddings_export.csv",
+	}
+	outputPath, err := prompt.Run()
+	if err != nil {
+		return err
+	}
+
+	// Проверяем, существует ли файл
+	if _, err := os.Stat(outputPath); err == nil {
+		color.Yellow("⚠️  Файл уже существует: %s", outputPath)
+		confirmPrompt := promptui.Select{
+			Label: "Перезаписать файл?",
+			Items: []string{"✅ Да, перезаписать", "❌ Нет, отменить"},
+		}
+		_, result, err := confirmPrompt.Run()
+		if err != nil {
+			return err
+		}
+		if strings.Contains(result, "Нет") {
+			color.Yellow("📤 Экспорт отменён")
+			fmt.Println()
+			return nil
+		}
+	}
+
+	// Создаём приложение для экспорта
+	app := app.New(c.config)
+	if err := app.InitializeDatabase(); err != nil {
+		return fmt.Errorf("ошибка инициализации базы данных: %w", err)
+	}
+	// Примечание: cleanup() вызывается автоматически при завершении работы приложения
+
+	// Выполняем экспорт
+	color.Yellow("📤 Выполняется экспорт...")
+	if err := app.ExportDatabaseToCSV(outputPath); err != nil {
+		return err
+	}
+
+	// Показываем статистику экспортированного файла
+	if fileInfo, err := os.Stat(outputPath); err == nil {
+		color.Green("✅ Экспорт завершён успешно!")
+		fmt.Printf("📁 Файл: %s\n", outputPath)
+		fmt.Printf("📊 Размер: %.2f МБ\n", float64(fileInfo.Size())/1024/1024)
+		fmt.Println()
+		color.Cyan("💡 Теперь вы можете:")
+		color.Cyan("   • Открыть файл в Excel или Google Sheets")
+		color.Cyan("   • Импортировать данные в другие системы")
+		color.Cyan("   • Анализировать структуру кодовой базы")
+		fmt.Println()
+	}
+
+	return nil
 }

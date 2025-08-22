@@ -238,45 +238,76 @@ func (r *App) cleanup() {
 func (r *App) registerParsers() {
 	r.logger.Debug("Начинаем регистрацию парсеров...")
 
-	// Регистрируем Python парсер
-	r.logger.Debug("Регистрация Python парсера...")
-	pythonParser := parsers.NewPythonParser()
-	if pythonParser == nil {
-		r.logger.Error("❌ Не удалось создать Python парсер")
-		return
+	// Создаем карту выбранных расширений для быстрого поиска
+	selectedExtensions := make(map[string]bool)
+	for _, ext := range r.config.FileExtensions {
+		selectedExtensions[ext] = true
 	}
-	r.parsers.Register(pythonParser)
-	r.logger.Debugf("✅ Python парсер зарегистрирован: %s", pythonParser.GetName())
 
-	// Регистрируем JavaScript парсер
-	r.logger.Debug("Регистрация JavaScript парсера...")
-	javascriptParser := parsers.NewJavaScriptParser()
-	if javascriptParser == nil {
-		r.logger.Error("❌ Не удалось создать JavaScript парсер")
-		return
+	// Регистрируем Python парсер (если выбраны .py файлы)
+	if selectedExtensions[".py"] {
+		r.logger.Debug("Регистрация Python парсера...")
+		pythonParser := parsers.NewPythonParser()
+		if pythonParser == nil {
+			r.logger.Error("❌ Не удалось создать Python парсер")
+		} else {
+			r.parsers.Register(pythonParser)
+			r.logger.Debugf("✅ Python парсер зарегистрирован: %s", pythonParser.GetName())
+		}
+	} else {
+		r.logger.Debug("⏭️ Python парсер пропущен (файлы .py не выбраны)")
 	}
-	r.parsers.Register(javascriptParser)
-	r.logger.Debugf("✅ JavaScript парсер зарегистрирован: %s", javascriptParser.GetName())
 
-	// Регистрируем PHP парсер
-	r.logger.Debug("Регистрация PHP парсера...")
-	phpParser := parsers.NewPHPParser()
-	if phpParser == nil {
-		r.logger.Error("❌ Не удалось создать PHP парсер")
-		return
+	// Регистрируем JavaScript парсер (если выбраны JS/TS файлы)
+	if selectedExtensions[".js"] {
+		r.logger.Debug("Регистрация JavaScript парсера...")
+		javascriptParser := parsers.NewJavaScriptParser()
+		if javascriptParser == nil {
+			r.logger.Error("❌ Не удалось создать JavaScript парсер")
+		} else {
+			r.parsers.Register(javascriptParser)
+			r.logger.Debugf("✅ JavaScript парсер зарегистрирован: %s", javascriptParser.GetName())
+		}
+	} else {
+		r.logger.Debug("⏭️ JavaScript парсер пропущен (JS файлы не выбраны)")
 	}
-	r.parsers.Register(phpParser)
-	r.logger.Debugf("✅ PHP парсер зарегистрирован: %s", phpParser.GetName())
 
-	// Регистрируем текстовый парсер
-	r.logger.Debug("Регистрация текстового парсера...")
-	textParser := parsers.NewTextParser(r.config.TokenLimit)
-	if textParser == nil {
-		r.logger.Error("❌ Не удалось создать текстовый парсер")
-		return
+	// Регистрируем PHP парсер (если выбраны .php файлы)
+	if selectedExtensions[".php"] {
+		r.logger.Debug("Регистрация PHP парсера...")
+		phpParser := parsers.NewPHPParser()
+		if phpParser == nil {
+			r.logger.Error("❌ Не удалось создать PHP парсер")
+		} else {
+			r.parsers.Register(phpParser)
+			r.logger.Debugf("✅ PHP парсер зарегистрирован: %s", phpParser.GetName())
+		}
+	} else {
+		r.logger.Debug("⏭️ PHP парсер пропущен (файлы .php не выбраны)")
 	}
-	r.parsers.Register(textParser)
-	r.logger.Debugf("✅ Текстовый парсер зарегистрирован: %s", textParser.GetName())
+
+	// Регистрируем текстовый парсер (если выбраны текстовые файлы)
+	textExtensions := []string{".md", ".yml", ".yaml", ".conf", ".txt"}
+	hasTextFiles := false
+	for _, ext := range textExtensions {
+		if selectedExtensions[ext] {
+			hasTextFiles = true
+			break
+		}
+	}
+
+	if hasTextFiles {
+		r.logger.Debug("Регистрация текстового парсера...")
+		textParser := parsers.NewTextParser(r.config.TokenLimit)
+		if textParser == nil {
+			r.logger.Error("❌ Не удалось создать текстовый парсер")
+		} else {
+			r.parsers.Register(textParser)
+			r.logger.Debugf("✅ Текстовый парсер зарегистрирован: %s", textParser.GetName())
+		}
+	} else {
+		r.logger.Debug("⏭️ Текстовый парсер пропущен (текстовые файлы не выбраны)")
+	}
 
 	allParsers := r.parsers.GetAllParsers()
 	r.logger.Infof("📝 Зарегистрировано парсеров: %d", len(allParsers))
@@ -641,4 +672,35 @@ func (r *App) getFileHash(filePath string) (string, error) {
 
 	hash := md5.Sum(data)
 	return fmt.Sprintf("%x", hash), nil
+}
+
+// ExportDatabaseToCSV экспортирует базу данных в CSV файл
+func (r *App) ExportDatabaseToCSV(outputPath string) error {
+	r.logger.Info("📤 Экспорт базы данных в CSV...")
+
+	// Проверяем, существует ли база данных
+	if r.database == nil {
+		return fmt.Errorf("база данных не инициализирована")
+	}
+
+	// Получаем статистику для проверки наличия данных
+	stats, err := r.database.GetStatistics()
+	if err != nil {
+		return fmt.Errorf("ошибка получения статистики базы данных: %w", err)
+	}
+
+	totalBlocks := stats["total_blocks"].(int)
+	if totalBlocks == 0 {
+		return fmt.Errorf("база данных пуста, нечего экспортировать")
+	}
+
+	r.logger.Infof("📊 Найдено блоков для экспорта: %d", totalBlocks)
+
+	// Экспортируем данные
+	if err := r.database.ExportToCSV(outputPath); err != nil {
+		return fmt.Errorf("ошибка экспорта в CSV: %w", err)
+	}
+
+	r.logger.Infof("✅ Экспорт завершён! Файл сохранён: %s", outputPath)
+	return nil
 }
